@@ -25,6 +25,7 @@ const (
 	NumberedList
 	CodeBlock
 	CodeInline
+	BlockQuote
 )
 
 type Token struct {
@@ -115,8 +116,11 @@ func (p *Parser) tokenize(markdown []byte) {
 			} else if lir.Match(line) {
 				tokenType = NumberedList
 				value = string(lir.ReplaceAll(line, nil))
+			} else if bytes.HasPrefix(line, []byte("> ")) {
+				tokenType = BlockQuote
+				value = string(bytes.TrimLeft(line, "> "))
 			} else {
-				// Handle bold and italics
+				// Handle bold and italics and anything where it can appear inline...
 				for {
 					if bytes.Contains(line, []byte("**")) || bytes.Contains(line, []byte("__")) { //bold
 						startIdx := -1
@@ -192,8 +196,18 @@ func (p *Parser) tokenize(markdown []byte) {
 
 func (p *Parser) parse() string {
 	var result string
+	var ulFlag bool
+	var olFlag bool
 	for p.current < len(p.tokens) {
 		token := p.tokens[p.current]
+		// end lists
+		if ulFlag && token.Type != BulletList {
+			ulFlag = false
+			result += "</ul>"
+		} else if olFlag && token.Type != NumberedList {
+			olFlag = false
+			result += "</ol>"
+		}
 		switch token.Type {
 		case Text:
 			result += token.Value + "\n"
@@ -218,11 +232,21 @@ func (p *Parser) parse() string {
 		case CodeInline:
 			result += "<code>" + token.Value + "</code>\n"
 		case BulletList:
-			result += "<ul><li>" + token.Value + "</li></ul>\n"
+			if !ulFlag {
+				ulFlag = true
+				result += "<ul>"
+			}
+			result += "<li>" + token.Value + "</li>\n"
 		case NumberedList:
-			result += "<ol><li>" + token.Value + "</li></ol>\n"
+			if !olFlag {
+				olFlag = true
+				result += "<ol>"
+			}
+			result += "<li>" + token.Value + "</li>\n"
 		case CodeBlock:
 			result += "<pre><code>" + token.Value + "</code></pre>\n"
+		case BlockQuote:
+			result += "<blockquote>" + token.Value + "</blockquote>\n"
 		}
 		p.current++
 	}
